@@ -1,0 +1,37 @@
+#!/usr/bin/env bpftrace
+
+kprobe:down_write
+{
+    if (arg0 != kaddr("shrinker_rwsem")) {
+        return;
+    }
+    @start[tid] = nsecs;
+}
+
+kretprobe:down_write /@start[tid]/
+{
+   $cost = (nsecs - @start[tid]) / 1000 / 1000;
+
+    if ($cost > 1) {
+        printf("down_write, cost=%dms, comm=%s, ustack %s\n", $cost, comm, kstack(perf, 10));
+    }
+
+    delete(@start[tid]);
+}
+
+kprobe:percpu_down_write {
+    if (arg0 != kaddr("cgroup_threadgroup_rwsem")) {
+            return;
+    }
+    @start[tid] = nsecs;
+}
+
+kretprobe:percpu_down_write /@start[tid]/ {
+    $cost = (nsecs - @start[tid]) / 1000 / 1000;
+    delete(@start[tid]);
+
+    if ($cost > 10) {
+            //printf("aquire lock: comm: %s, pid: %d, cost: %dms, kstack: %s, ustack: %s\n", comm, pid, $cost, kstack(), ustack());
+        printf("aquire lock: comm: %s, pid: %d, cost: %dms\n", comm, pid, $cost);
+    }
+}

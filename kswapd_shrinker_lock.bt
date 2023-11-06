@@ -1,0 +1,35 @@
+#!/usr/bin/env bpftrace
+
+kprobe:down_read_trylock
+{
+    if (arg0 != kaddr("shrinker_rwsem")) {
+        return;
+    }
+    @start[tid] = nsecs;
+}
+
+kretprobe:up_read /@start[tid]/
+{
+    $cost = (nsecs - @start[tid]) / 1000 / 1000;
+
+    if ($cost > 1) {
+        printf("kswapd lock, cost=%dms, comm=%s, ustack %s\n", $cost, comm, kstack(perf, 10));
+    }
+
+    delete(@start[tid]);
+}
+
+/*
+ Attaching 2 probes...
+ down_write, cost=180ms, comm=kswapd0, ustack 
+        ffffffff81061720 kretprobe_trampoline+0
+        ffffffff8123fbc8 rmap_walk+72
+        ffffffff8123fd2c page_referenced+332
+        ffffffff812037ef shrink_page_list+1583
+        ffffffff81204a78 shrink_inactive_list+552
+        ffffffff812051aa shrink_list+74
+        ffffffff81205c10 shrink_lruvec+768
+        ffffffff81206178 shrink_node+408
+        ffffffff812076d6 balance_pgdat+854
+        ffffffff81207b84 kswapd+532
+*/

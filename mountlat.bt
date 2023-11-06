@@ -1,0 +1,20 @@
+#!/bin/env bpftrace
+
+tracepoint:syscalls:sys_enter_mount {
+        @start[tid] = nsecs;
+        @type[tid] = args->type;
+}
+
+tracepoint:syscalls:sys_exit_mount /@start[tid]/ {
+        $cost = (nsecs - @start[tid]) / 1000 / 1000;
+        $type = @type[tid];
+
+        delete(@start[tid]);
+        delete(@type[tid]);
+
+        if ($cost < 10) {
+                return;
+        }
+
+        printf("mount: type=%s, cost=%dms\n", str($type), $cost);
+}
